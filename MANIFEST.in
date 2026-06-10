@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include CHANGELOG.md
+recursive-include src *.py
+recursive-include src *.toml
+recursive-include tests *.py

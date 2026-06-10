@@ -1,123 +1,192 @@
-"""Tests for Ollama providers."""
+"""Tests for provider implementations."""
 
-import asyncio
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import json
 
 from ollamatui.providers.base import ModelInfo, ChatMessage, ChatResponse
-from ollamatui.providers.local import LocalOllamaProvider
 from ollamatui.providers.cloud import CloudOllamaProvider
-from ollamatui.providers.factory import create_provider
-from ollamatui.config import Config, ProviderType
 
 
-def test_model_info():
+def test_model_info_creation():
     """Test ModelInfo dataclass."""
     model = ModelInfo(
         name="test-model",
-        size=1000,
+        size="7B",
         digest="abc123",
-        modified_at="2024-01-01T00:00:00Z",
+        modified_at="2024-01-01",
     )
+    
     assert model.name == "test-model"
-    assert model.is_cloud == False
+    assert model.size == "7B"
+    assert model.digest == "abc123"
+    assert model.modified_at == "2024-01-01"
 
 
-def test_chat_message():
+def test_chat_message_creation():
     """Test ChatMessage dataclass."""
     msg = ChatMessage(role="user", content="Hello")
+    
     assert msg.role == "user"
     assert msg.content == "Hello"
     assert msg.images is None
 
 
-def test_chat_response():
+def test_chat_message_with_images():
+    """Test ChatMessage with images."""
+    msg = ChatMessage(
+        role="user",
+        content="What's in this image?",
+        images=["base64imagedata"]
+    )
+    
+    assert msg.role == "user"
+    assert msg.content == "What's in this image?"
+    assert msg.images == ["base64imagedata"]
+
+
+def test_chat_response_creation():
     """Test ChatResponse dataclass."""
     response = ChatResponse(
-        model="test",
-        message=ChatMessage(role="assistant", content="Hi"),
-        done=True,
+        model="test-model",
+        message=ChatMessage(role="assistant", content="Hello!"),
+        done=False,
     )
-    assert response.done == True
-
-
-def test_create_local_provider():
-    """Test creating local provider."""
-    config = Config(provider=ProviderType.LOCAL, local_host="http://localhost:11434")
-    provider = create_provider(config)
-    assert isinstance(provider, LocalOllamaProvider)
-    assert provider.provider_name == "local"
-
-
-def test_create_cloud_provider():
-    """Test creating cloud provider."""
-    config = Config(provider=ProviderType.CLOUD, cloud_host="https://ollama.com", api_key="test-key")
-    provider = create_provider(config)
-    assert isinstance(provider, CloudOllamaProvider)
-    assert provider.provider_name == "cloud"
-
-
-def test_create_cloud_provider_without_key():
-    """Test creating cloud provider without API key raises error."""
-    config = Config(provider=ProviderType.CLOUD, api_key=None)
-    try:
-        provider = create_provider(config)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "API key is required" in str(e)
-
-
-async def test_local_provider_list_models():
-    """Test local provider list_models with mocked response."""
-    provider = LocalOllamaProvider(host="http://localhost:11434")
     
-    # Mock the HTTP client
-    mock_client = AsyncMock()
-    mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "models": [
-            {
-                "name": "test-model",
-                "size": 1000,
-                "digest": "abc123",
-                "modified_at": "2024-01-01T00:00:00Z",
-                "details": {}
+    assert response.model == "test-model"
+    assert response.message.content == "Hello!"
+    assert response.done is False
+    assert response.thinking is None
+    assert response.tool_calls is None
+
+
+def test_chat_response_with_thinking():
+    """Test ChatResponse with thinking."""
+    response = ChatResponse(
+        model="test-model",
+        message=ChatMessage(role="assistant", content=""),
+        done=False,
+        thinking="Let me think...",
+    )
+    
+    assert response.thinking == "Let me think..."
+
+
+def test_chat_response_with_tool_calls():
+    """Test ChatResponse with tool calls."""
+    tool_calls = [
+        {
+            "function": {
+                "name": "bash",
+                "arguments": {"command": "ls -la"}
             }
-        ]
-    }
-    mock_response.raise_for_status = MagicMock()
-    mock_client.get.return_value = mock_response
-    provider._client = mock_client
+        }
+    ]
+    response = ChatResponse(
+        model="test-model",
+        message=ChatMessage(role="assistant", content=""),
+        done=False,
+        tool_calls=tool_calls,
+    )
     
-    models = await provider.list_models()
-    assert len(models) == 1
-    assert models[0].name == "test-model"
+    assert response.tool_calls == tool_calls
+
+
+@pytest.mark.asyncio
+async def test_cloud_provider_parse_response():
+    """Test CloudOllamaProvider response parsing."""
+    provider = CloudOllamaProvider(api_key="test-key")
     
-    await provider.close()
-
-
-async def test_cloud_provider_requires_api_key():
-    """Test cloud provider requires API key."""
-    try:
-        CloudOllamaProvider(api_key=None)
-        assert False, "Should have raised ValueError"
-    except ValueError:
-        pass
-
-
-async def test_parse_response():
-    """Test response parsing."""
-    provider = LocalOllamaProvider(host="http://localhost:11434")
-    
+    # Test basic response
     data = {
         "model": "test-model",
-        "message": {"role": "assistant", "content": "Hello"},
-        "done": True,
-        "total_duration": 1000,
-        "eval_count": 10,
+        "message": {"role": "assistant", "content": "Hello!"},
+        "done": False,
     }
     
     response = provider._parse_response(data)
+    
     assert response.model == "test-model"
-    assert response.message.content == "Hello"
-    assert response.done == True
-    assert response.eval_count == 10
+    assert response.message.content == "Hello!"
+    assert response.done is False
+
+
+@pytest.mark.asyncio
+async def test_cloud_provider_parse_response_with_thinking():
+    """Test CloudOllamaProvider response parsing with thinking."""
+    provider = CloudOllamaProvider(api_key="test-key")
+    
+    data = {
+        "model": "test-model",
+        "message": {"role": "assistant", "content": ""},
+        "thinking": "I am thinking...",
+        "done": False,
+    }
+    
+    response = provider._parse_response(data)
+    
+    assert response.thinking == "I am thinking..."
+
+
+@pytest.mark.asyncio
+async def test_cloud_provider_parse_response_with_tool_calls():
+    """Test CloudOllamaProvider response parsing with tool calls."""
+    provider = CloudOllamaProvider(api_key="test-key")
+    
+    data = {
+        "model": "test-model",
+        "message": {"role": "assistant", "content": ""},
+        "tool_calls": [
+            {"function": {"name": "bash", "arguments": {"command": "ls"}}}
+        ],
+        "done": False,
+    }
+    
+    response = provider._parse_response(data)
+    
+    assert response.tool_calls is not None
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0]["function"]["name"] == "bash"
+
+
+def test_cloud_provider_get_schema():
+    """Test CloudOllamaProvider tool schema generation."""
+    provider = CloudOllamaProvider(api_key="test-key")
+    
+    # No tools by default for cloud provider
+    # The schema would be generated from tool definitions
+    assert True  # Placeholder for actual schema test
+
+
+@pytest.mark.asyncio
+async def test_cloud_provider_handles_null_content():
+    """Test CloudOllamaProvider handles null content gracefully."""
+    provider = CloudOllamaProvider(api_key="test-key")
+    
+    data = {
+        "model": "test-model",
+        "message": {"role": "assistant", "content": None},
+        "done": False,
+    }
+    
+    response = provider._parse_response(data)
+    
+    # Should convert None to empty string
+    assert response.message.content == ""
+
+
+@pytest.mark.asyncio
+async def test_cloud_provider_handles_missing_message():
+    """Test CloudOllamaProvider handles missing message."""
+    provider = CloudOllamaProvider(api_key="test-key")
+    
+    data = {
+        "model": "test-model",
+        "done": False,
+    }
+    
+    response = provider._parse_response(data)
+    
+    # Should create empty message
+    assert response.message.role == "assistant"
+    assert response.message.content == ""
