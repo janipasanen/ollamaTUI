@@ -155,7 +155,7 @@ class OllamaTUIApp(App):
         """Load models from provider."""
         try:
             models = await self.provider.list_models()
-            self.model_selector.set_models(models, self.config.provider.value)
+            self.model_selector.set_models(models, self.config.provider)
         except Exception as e:
             self.notify(f"Failed to load models: {e}", severity="error")
     

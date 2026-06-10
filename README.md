@@ -54,22 +54,33 @@ pipx install .
 ollama serve
 ```
 
-### 2. Run OllamaTUI
+### 2. Set up API Key (for Cloud models)
+
+```bash
+# Get your API key from https://ollama.com/settings/keys
+# Then export it:
+export OLLAMA_API_KEY=your_api_key_from_ollama.com
+
+# Add to your shell profile for persistence:
+echo 'export OLLAMA_API_KEY=your_api_key_from_ollama.com' >> ~/.zshrc  # for zsh
+echo 'export OLLAMA_API_KEY=your_api_key_from_ollama.com' >> ~/.bashrc  # for bash
+```
+
+### 3. Run OllamaTUI
 
 ```bash
 # With local models
 ollamatui
 
-# With Ollama Cloud (requires API key)
-export OLLAMA_API_KEY=your_api_key_from_ollama.com
+# With Ollama Cloud
 ollamatui --provider cloud
+
+# Specify a cloud model
+ollamatui --provider cloud --model devstral-small-2:24b-cloud
+
+# Or use --api-key flag
+ollamatui --provider cloud --api-key your_api_key
 ```
-
-### 3. Get an Ollama Cloud API Key
-
-1. Go to https://ollama.com/settings/keys
-2. Create a new API key
-3. Export it: `export OLLAMA_API_KEY=your_key`
 
 ## Usage
 
@@ -251,6 +262,45 @@ ollamaTUI/
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Troubleshooting
+
+### "API key is required for CloudOllamaProvider" error
+
+If you see this error when using `--provider cloud`, the API key is not being detected. Make sure:
+
+1. The environment variable is set correctly:
+   ```bash
+   echo $OLLAMA_API_KEY  # Should show your key
+   ```
+
+2. You've reinstalled the package after updates:
+   ```bash
+   cd ollamaTUI
+   pip install -e .
+   ```
+
+### "'str' object has no attribute 'value'" error
+
+This was a bug in earlier versions. Reinstall the package:
+```bash
+cd ollamaTUI
+pip install -e . --force-reinstall
+```
+
+### "Failed to load models" error
+
+For local models, ensure Ollama is running:
+```bash
+ollama serve
+```
+
+For cloud models, verify your API key is valid and has access to cloud models.
+
+### Models not appearing in the list
+
+- **Local**: Run `ollama list` to see installed models, pull with `ollama pull <model>`
+- **Cloud**: Ensure you have a valid API key and the model name includes `-cloud` suffix
 
 ## Acknowledgments
 

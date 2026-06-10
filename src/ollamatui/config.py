@@ -138,6 +138,12 @@ def load_config(profile: Optional[str] = None, cli_overrides: Optional[dict] = N
         if value is not None:
             merged[field] = value
     
+    # Also check for OLLAMA_API_KEY as fallback (standard Ollama env var)
+    if not merged.get("api_key"):
+        ollama_api_key = os.environ.get("OLLAMA_API_KEY")
+        if ollama_api_key:
+            merged["api_key"] = ollama_api_key
+    
     # Apply CLI overrides
     if cli_overrides:
         merged.update({k: v for k, v in cli_overrides.items() if v is not None})
