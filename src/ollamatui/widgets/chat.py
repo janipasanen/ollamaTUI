@@ -163,3 +163,8 @@ class ChatWidget(Container):
         """Clear all messages."""
         self._message_container.remove_children()
         self.messages = []
+    
+    def focus(self) -> None:
+        """Focus the input field."""
+        if self._input:
+            self._input.focus()

@@ -107,6 +107,8 @@ class OllamaTUIApp(App):
         Binding("ctrl+f", "toggle_files", "Files"),
         Binding("ctrl+s", "save_session", "Save"),
         Binding("ctrl+r", "resume_session", "Resume"),
+        Binding("tab", "focus_input", "Focus Input", show=False),
+        Binding("escape", "focus_input", "Focus Input", show=False),
     ]
     
     def __init__(self, config: Config = None, **kwargs):
@@ -195,6 +197,15 @@ class OllamaTUIApp(App):
         
         # Set up event handlers
         self.chat_widget.focus()
+    
+    def on_app_focus(self, event: events.AppFocus) -> None:
+        """Handle app focus - focus input when app gets focus."""
+        # Focus the chat input when app gets focus
+        try:
+            if self.chat_widget and not getattr(self.chat_widget, 'is_streaming', False):
+                self.chat_widget.focus()
+        except:
+            pass
     
     async def _load_models(self) -> None:
         """Load models from provider."""
@@ -387,6 +398,11 @@ class OllamaTUIApp(App):
         finally:
             # Always reset streaming state
             self.chat_widget.set_streaming(False)
+            # Refocus input after streaming ends
+            try:
+                self.chat_widget.focus()
+            except:
+                pass
     
     async def on_chat_widget_stop_requested(self, event: ChatWidget.StopRequested) -> None:
         """Handle stop request."""
@@ -403,6 +419,14 @@ class OllamaTUIApp(App):
     def action_toggle_files(self) -> None:
         """Toggle file tree visibility."""
         self.file_tree.display = not self.file_tree.display
+    
+    def action_focus_input(self) -> None:
+        """Focus the chat input."""
+        try:
+            if self.chat_widget and hasattr(self.chat_widget, '_input'):
+                self.chat_widget._input.focus()
+        except:
+            pass
     
     def action_new_chat(self) -> None:
         """Start a new chat."""
