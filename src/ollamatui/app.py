@@ -197,6 +197,13 @@ class OllamaTUIApp(App):
         # Start streaming response
         self.chat_widget.set_streaming(True)
         
+        # Use call_from_thread to run async operation
+        import asyncio
+        asyncio.create_task(self._stream_chat_response())
+    
+    async def _stream_chat_response(self) -> None:
+        """Stream chat response."""
+        response_text = ""
         try:
             # Build message history
             messages = [
@@ -204,11 +211,10 @@ class OllamaTUIApp(App):
                 for m in self.chat_widget.messages
             ]
             
-            # Get model name - strip -cloud suffix for cloud provider if needed
+            # Get model name
             model_name = self.current_model.name
             
             # Stream response
-            response_text = ""
             async for chunk in self.provider.chat(
                 model_name,
                 messages,
@@ -218,10 +224,13 @@ class OllamaTUIApp(App):
                     "top_p": self.config.top_p,
                 },
             ):
+                # Check if we should stop
+                if not self.chat_widget.is_streaming:
+                    break
+                
                 try:
                     if chunk.thinking:
-                        # Show thinking indicator
-                        self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking: {chunk.thinking}*", "assistant")
+                        self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking...*", "assistant")
                     
                     if chunk.message and chunk.message.content:
                         response_text += chunk.message.content
@@ -230,24 +239,20 @@ class OllamaTUIApp(App):
                     if chunk.done:
                         break
                 except Exception as e:
-                    # Log but continue processing
                     print(f"Error processing chunk: {e}")
                     continue
         
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()
-            print(f"Chat error: {error_detail}")  # Debug output
+            print(f"Chat error: {error_detail}")
             self.notify(f"Error: {e}", severity="error", timeout=10)
-            # Only add error message to chat if we haven't started receiving response
             if not response_text:
                 self.chat_widget.append_to_last_message(f"\n\n❌ Error: {e}", "assistant")
         
         finally:
             # Always reset streaming state
             self.chat_widget.set_streaming(False)
-            # Refresh the UI
-            self.chat_widget.refresh()
     
     async def on_chat_widget_stop_requested(self, event: ChatWidget.StopRequested) -> None:
         """Handle stop request."""

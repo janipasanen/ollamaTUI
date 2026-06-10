@@ -20,6 +20,7 @@ class ChatMessageWidget(Static):
         super().__init__(**kwargs)
         self.message = message
         self.timestamp = timestamp or datetime.now()
+        self._content = message.content  # Track content separately
         self._rendered = False
     
     def compose(self) -> ComposeResult:
@@ -31,13 +32,23 @@ class ChatMessageWidget(Static):
         time_str = self.timestamp.strftime("%H:%M:%S")
         
         # Content with markdown rendering
-        yield Markdown(
-            self.message.content,
-            code_theme="monokai",
-        )
+        # Use Static instead of Markdown for better performance during streaming
+        from rich.text import Text
+        yield Static(self._content, id="msg-content")
     
     def on_mount(self) -> None:
         self.add_class(f"message-{self.message.role}")
+    
+    def update_content(self, new_content: str) -> None:
+        """Update content efficiently."""
+        self._content = new_content
+        self.message.content = new_content
+        try:
+            content_widget = self.query_one("#msg-content", Static)
+            content_widget.update(new_content)
+        except Exception:
+            # Fallback: just refresh the whole widget
+            self.refresh()
 
 
 class ChatWidget(Container):
@@ -101,16 +112,19 @@ class ChatWidget(Container):
     
     def append_to_last_message(self, delta: str, role: str = "assistant") -> None:
         """Append to the last message (for streaming)."""
-        if self.messages and self.messages[-1].role == role:
-            self.messages[-1].content += delta
-            widgets = list(self._message_container.children)
-            if widgets:
-                last_widget = widgets[-1]
-                if isinstance(last_widget, ChatMessageWidget):
-                    last_widget.message.content = self.messages[-1].content
-                    last_widget.refresh()
-        else:
-            self.add_message(ChatMessage(role=role, content=delta))
+        try:
+            if self.messages and self.messages[-1].role == role:
+                self.messages[-1].content += delta
+                widgets = list(self._message_container.children)
+                if widgets:
+                    last_widget = widgets[-1]
+                    if isinstance(last_widget, ChatMessageWidget):
+                        last_widget.update_content(self.messages[-1].content)
+            else:
+                self.add_message(ChatMessage(role=role, content=delta))
+        except Exception as e:
+            # Log but don't crash
+            print(f"Error appending message: {e}")
     
     def _scroll_to_bottom(self) -> None:
         """Scroll to the bottom of the chat."""
