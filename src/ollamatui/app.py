@@ -247,7 +247,8 @@ class OllamaTUIApp(App):
         asyncio.create_task(self._stream_chat_response())
     
     async def _stream_chat_response(self) -> None:
-        """Stream chat response."""
+        """Stream chat response with tool call loop."""
+        import json
         response_text = ""
         try:
             # Build message history
@@ -262,73 +263,118 @@ class OllamaTUIApp(App):
             # Get tool schemas
             tools = self._get_tool_schemas()
             
-            # Stream response
-            async for chunk in self.provider.chat(
-                model_name,
-                messages,
-                stream=True,
-                options={
-                    "temperature": self.config.temperature,
-                    "top_p": self.config.top_p,
-                },
-                tools=tools,
-            ):
-                # Check if we should stop
-                if not self.chat_widget.is_streaming:
+            # Tool call loop - continue until model stops making tool calls
+            max_iterations = 10  # Prevent infinite loops
+            for iteration in range(max_iterations):
+                tool_calls_made = False
+                assistant_content = ""
+                
+                # Stream response
+                async for chunk in self.provider.chat(
+                    model_name,
+                    messages,
+                    stream=True,
+                    options={
+                        "temperature": self.config.temperature,
+                        "top_p": self.config.top_p,
+                    },
+                    tools=tools,
+                ):
+                    # Check if we should stop
+                    if not self.chat_widget.is_streaming:
+                        break
+                    
+                    try:
+                        # Handle tool calls
+                        if chunk.tool_calls:
+                            tool_calls_made = True
+                            
+                            # Show tool calls
+                            self.chat_widget.append_to_last_message("\n🔧 Using tools...", "assistant")
+                            
+                            # Process each tool call
+                            tool_results = []
+                            for tool_call in chunk.tool_calls:
+                                tool_name = tool_call.get("function", {}).get("name", "")
+                                tool_args = tool_call.get("function", {}).get("arguments", {})
+                                
+                                if isinstance(tool_args, str):
+                                    try:
+                                        tool_args = json.loads(tool_args)
+                                    except:
+                                        tool_args = {}
+                                
+                                if tool_name in self.tools:
+                                    # Show what we're doing
+                                    args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:3])
+                                    self.chat_widget.append_to_last_message(f"\n⏳ {tool_name}({args_str})", "assistant")
+                                    
+                                    # Execute tool
+                                    try:
+                                        result = await self.tools[tool_name].execute(**tool_args)
+                                        if result.success:
+                                            # Format output for model
+                                            if isinstance(result.output, list):
+                                                output_str = json.dumps(result.output, indent=2)
+                                            else:
+                                                output_str = str(result.output)
+                                            
+                                            # Truncate long outputs for display
+                                            display_str = output_str[:500] + "..." if len(output_str) > 500 else output_str
+                                            self.chat_widget.append_to_last_message(f"\n✅ {display_str}", "assistant")
+                                            
+                                            # Add to tool results
+                                            tool_results.append({
+                                                "role": "tool",
+                                                "content": output_str,
+                                            })
+                                        else:
+                                            error_msg = result.error or "Tool execution failed"
+                                            self.chat_widget.append_to_last_message(f"\n❌ Error: {error_msg}", "assistant")
+                                            tool_results.append({
+                                                "role": "tool",
+                                                "content": f"Error: {error_msg}",
+                                            })
+                                    except Exception as e:
+                                        self.chat_widget.append_to_last_message(f"\n❌ Tool error: {e}", "assistant")
+                                        tool_results.append({
+                                            "role": "tool",
+                                            "content": f"Error: {str(e)}",
+                                        })
+                                else:
+                                    self.chat_widget.append_to_last_message(f"\n⚠️ Unknown tool: {tool_name}", "assistant")
+                            
+                            # Add tool results to messages for next iteration
+                            for tr in tool_results:
+                                messages.append(ChatMessage(
+                                    role=tr["role"],
+                                    content=tr["content"],
+                                ))
+                            
+                            continue
+                        
+                        if chunk.thinking:
+                            self.chat_widget.append_to_last_message("\n\n💭 *Thinking...*", "assistant")
+                        
+                        if chunk.message and chunk.message.content:
+                            assistant_content += chunk.message.content
+                            self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
+                        
+                        if chunk.done:
+                            # Add final assistant content to messages
+                            if assistant_content:
+                                messages.append(ChatMessage(role="assistant", content=assistant_content))
+                            break
+                    except Exception as e:
+                        print(f"Error processing chunk: {e}")
+                        continue
+                
+                # If no tool calls were made, we're done
+                if not tool_calls_made:
                     break
                 
-                try:
-                    # Handle tool calls
-                    if chunk.tool_calls:
-                        # Add assistant message with tool calls
-                        self.chat_widget.append_to_last_message("\n🔧 Using tools...", "assistant")
-                        
-                        # Process tool calls
-                        for tool_call in chunk.tool_calls:
-                            tool_name = tool_call.get("function", {}).get("name", "")
-                            tool_args = tool_call.get("function", {}).get("arguments", {})
-                            
-                            if isinstance(tool_args, str):
-                                import json
-                                try:
-                                    tool_args = json.loads(tool_args)
-                                except:
-                                    tool_args = {}
-                            
-                            if tool_name in self.tools:
-                                # Show what we're doing
-                                args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:3])
-                                self.chat_widget.append_to_last_message(f"\n⏳ {tool_name}({args_str})", "assistant")
-                                
-                                # Execute tool
-                                try:
-                                    result = await self.tools[tool_name].execute(**tool_args)
-                                    if result.success:
-                                        # Truncate long outputs
-                                        output_str = str(result.output)
-                                        if len(output_str) > 1000:
-                                            output_str = output_str[:1000] + "..."
-                                        self.chat_widget.append_to_last_message(f"\n✅ {output_str}", "assistant")
-                                    else:
-                                        self.chat_widget.append_to_last_message(f"\n❌ Error: {result.error}", "assistant")
-                                except Exception as e:
-                                    self.chat_widget.append_to_last_message(f"\n❌ Tool error: {e}", "assistant")
-                            else:
-                                self.chat_widget.append_to_last_message(f"\n⚠️ Unknown tool: {tool_name}", "assistant")
-                        continue
-                    
-                    if chunk.thinking:
-                        self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking...*", "assistant")
-                    
-                    if chunk.message and chunk.message.content:
-                        response_text += chunk.message.content
-                        self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
-                    
-                    if chunk.done:
-                        break
-                except Exception as e:
-                    print(f"Error processing chunk: {e}")
-                    continue
+                # Otherwise, continue the loop with tool results in messages
+                self.chat_widget.append_to_last_message("\n📤 Processing results...", "assistant")
         
         except Exception as e:
             import traceback

@@ -4,6 +4,7 @@ README.md
 pyproject.toml
 src/ollamatui/__init__.py
 src/ollamatui/app.py
+src/ollamatui/app_tool_handler.py
 src/ollamatui/config.py
 src/ollamatui/main.py
 src/ollamatui.egg-info/PKG-INFO
