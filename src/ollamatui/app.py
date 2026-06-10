@@ -1,0 +1,258 @@
+"""Main Textual application for OllamaTUI."""
+
+from textual.app import App, ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import Header, Footer, Static, Label
+from textual.binding import Binding
+from textual.screen import Screen
+from textual import events
+
+from ollamatui.config import Config, load_config
+from ollamatui.providers.factory import create_provider
+from ollamatui.providers.base import ModelInfo, ChatMessage
+from ollamatui.widgets.chat import ChatWidget
+from ollamatui.widgets.model_selector import ModelSelector
+from ollamatui.widgets.file_tree import FileTreeWidget
+
+
+class OllamaTUIApp(App):
+    """Main OllamaTUI application."""
+    
+    CSS = """
+    Screen {
+        layout: horizontal;
+    }
+    
+    #sidebar {
+        width: 30;
+        min-width: 25;
+        max-width: 50;
+        border-right: solid $primary;
+        padding: 1;
+    }
+    
+    #main-content {
+        width: 1fr;
+        layout: vertical;
+    }
+    
+    #chat-area {
+        height: 1fr;
+        border: solid $primary;
+        margin: 1;
+    }
+    
+    #input-area {
+        height: auto;
+        min-height: 5;
+        margin: 1;
+    }
+    
+    .selector-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    
+    .provider-tabs {
+        layout: horizontal;
+        margin-bottom: 1;
+    }
+    
+    .provider-tabs Button {
+        margin-right: 1;
+    }
+    
+    #model-list {
+        height: 1fr;
+    }
+    
+    #file-tree {
+        height: 1fr;
+    }
+    
+    .message-user {
+        background: $surface;
+        margin: 1;
+        padding: 1;
+    }
+    
+    .message-assistant {
+        background: $surface;
+        margin: 1;
+        padding: 1;
+    }
+    
+    #chat-messages {
+        padding: 1;
+    }
+    
+    #chat-input-container {
+        layout: horizontal;
+        height: auto;
+    }
+    
+    #chat-input {
+        width: 1fr;
+        margin-right: 1;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+n", "new_chat", "New Chat"),
+        Binding("ctrl+m", "toggle_models", "Models"),
+        Binding("ctrl+f", "toggle_files", "Files"),
+        Binding("ctrl+s", "save_session", "Save"),
+        Binding("ctrl+r", "resume_session", "Resume"),
+    ]
+    
+    def __init__(self, config: Config = None, **kwargs):
+        super().__init__(**kwargs)
+        self.config = config or load_config()
+        self.provider = None
+        self.current_model: ModelInfo = None
+        self.chat_widget: ChatWidget = None
+        self.model_selector: ModelSelector = None
+        self.file_tree: FileTreeWidget = None
+        self._sidebar_visible = True
+    
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        
+        with Horizontal():
+            # Sidebar
+            with Container(id="sidebar"):
+                self.model_selector = ModelSelector(id="model-selector")
+                yield self.model_selector
+                
+                self.file_tree = FileTreeWidget(
+                    root_path=Path(self.config.working_dir),
+                    id="file-tree"
+                )
+                yield self.file_tree
+            
+            # Main content
+            with Container(id="main-content"):
+                with Container(id="chat-area"):
+                    self.chat_widget = ChatWidget(id="chat-widget")
+                    yield self.chat_widget
+        
+        yield Footer()
+    
+    async def on_mount(self) -> None:
+        """Initialize the app."""
+        # Create provider
+        self.provider = create_provider(self.config)
+        
+        # Load models
+        await self._load_models()
+        
+        # Set up event handlers
+        self.chat_widget.focus()
+    
+    async def _load_models(self) -> None:
+        """Load models from provider."""
+        try:
+            models = await self.provider.list_models()
+            self.model_selector.set_models(models, self.config.provider.value)
+        except Exception as e:
+            self.notify(f"Failed to load models: {e}", severity="error")
+    
+    async def on_model_selector_model_selected(self, event: ModelSelector.ModelSelected) -> None:
+        """Handle model selection."""
+        self.current_model = event.model
+        self.config.model = event.model.name
+        self.notify(f"Selected model: {event.model.name}")
+    
+    async def on_model_selector_provider_changed(self, event: ModelSelector.ProviderChanged) -> None:
+        """Handle provider change."""
+        self.config.provider = event.provider
+        await self._load_models()
+    
+    async def on_chat_widget_message_submitted(self, event: ChatWidget.MessageSubmitted) -> None:
+        """Handle chat message submission."""
+        if not self.current_model:
+            self.notify("Please select a model first", severity="warning")
+            return
+        
+        # Add user message
+        user_msg = ChatMessage(role="user", content=event.content)
+        self.chat_widget.add_message(user_msg)
+        
+        # Start streaming response
+        self.chat_widget.set_streaming(True)
+        
+        try:
+            # Build message history
+            messages = [
+                ChatMessage(role=m.role, content=m.content)
+                for m in self.chat_widget.messages
+            ]
+            
+            # Stream response
+            async for chunk in self.provider.chat(
+                self.current_model.name,
+                messages,
+                stream=True,
+                options={
+                    "temperature": self.config.temperature,
+                    "top_p": self.config.top_p,
+                },
+            ):
+                if chunk.thinking:
+                    # Show thinking indicator
+                    self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking: {chunk.thinking}*", "assistant")
+                
+                if chunk.message.content:
+                    self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
+                
+                if chunk.done:
+                    break
+        
+        except Exception as e:
+            self.notify(f"Error: {e}", severity="error")
+            self.chat_widget.append_to_last_message(f"\n\n❌ Error: {e}", "assistant")
+        
+        finally:
+            self.chat_widget.set_streaming(False)
+    
+    async def on_chat_widget_stop_requested(self, event: ChatWidget.StopRequested) -> None:
+        """Handle stop request."""
+        # Close provider connection to stop streaming
+        await self.provider.close()
+        self.provider = create_provider(self.config)
+        self.chat_widget.set_streaming(False)
+        self.notify("Generation stopped")
+    
+    def action_toggle_models(self) -> None:
+        """Toggle model selector visibility."""
+        self.model_selector.display = not self.model_selector.display
+    
+    def action_toggle_files(self) -> None:
+        """Toggle file tree visibility."""
+        self.file_tree.display = not self.file_tree.display
+    
+    def action_new_chat(self) -> None:
+        """Start a new chat."""
+        self.chat_widget.clear()
+        self.notify("New chat started")
+    
+    async def action_save_session(self) -> None:
+        """Save current session."""
+        # TODO: Implement session saving
+        self.notify("Session save not yet implemented")
+    
+    async def action_resume_session(self) -> None:
+        """Resume a session."""
+        # TODO: Implement session resume
+        self.notify("Session resume not yet implemented")
+    
+    async def on_unmount(self) -> None:
+        """Cleanup on exit."""
+        if self.provider:
+            await self.provider.close()
+
+
+# Import Path for file_tree
+from pathlib import Path
