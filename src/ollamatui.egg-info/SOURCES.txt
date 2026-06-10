@@ -1,3 +1,5 @@
+CHANGELOG.md
+MANIFEST.in
 README.md
 pyproject.toml
 src/ollamatui/__init__.py
@@ -12,6 +14,8 @@ src/ollamatui.egg-info/requires.txt
 src/ollamatui.egg-info/top_level.txt
 src/ollamatui/mcp/__init__.py
 src/ollamatui/mcp/client.py
+src/ollamatui/mcp/server.py
+src/ollamatui/mcp/types.py
 src/ollamatui/providers/__init__.py
 src/ollamatui/providers/base.py
 src/ollamatui/providers/cloud.py
@@ -29,8 +33,10 @@ src/ollamatui/widgets/__init__.py
 src/ollamatui/widgets/chat.py
 src/ollamatui/widgets/file_tree.py
 src/ollamatui/widgets/model_selector.py
+tests/__init__.py
 tests/test_config.py
 tests/test_integration.py
+tests/test_mcp.py
 tests/test_providers.py
 tests/test_sessions.py
 tests/test_tools.py

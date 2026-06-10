@@ -130,8 +130,8 @@ class CloudOllamaProvider(BaseOllamaProvider):
         # Handle content safely - might be None
         content = msg_data.get("content", "") or ""
         
-        # Handle tool calls if present
-        tool_calls = msg_data.get("tool_calls") or data.get("tool_calls")
+        # Handle tool calls - can be at top level or in message
+        tool_calls = data.get("tool_calls") or msg_data.get("tool_calls")
         
         return ChatResponse(
             model=data.get("model", ""),

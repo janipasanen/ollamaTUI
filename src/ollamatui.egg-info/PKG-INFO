@@ -186,6 +186,57 @@ ollamatui --profile coding
 # This loads ~/.ollamatui/coding.config.toml on top of base config
 ```
 
+## MCP (Model Context Protocol) Support
+
+OllamaTUI can run as an MCP server, exposing its tools to other AI applications:
+
+```bash
+# Run as MCP server
+ollamatui --mcp
+
+# With specific working directory
+ollamatui --mcp --cd /path/to/project
+
+# With specific approval policy
+ollamatui --mcp --approval never
+```
+
+The MCP server exposes these tools:
+- `bash` - Execute bash commands
+- `file` - File operations (read, write, edit, list, search)
+- `git` - Git operations
+- `web_search` - Web search
+
+### Using with Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "ollamatui": {
+      "command": "ollamatui",
+      "args": ["--mcp", "--cd", "/path/to/your/project"]
+    }
+  }
+}
+```
+
+### Using with Cursor
+
+Add to your Cursor settings:
+
+```json
+{
+  "mcp.servers": {
+    "ollamatui": {
+      "command": "ollamatui",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
 ## Supported Models
 
 ### Local Models (via Ollama)

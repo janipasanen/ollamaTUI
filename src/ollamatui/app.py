@@ -147,8 +147,20 @@ class OllamaTUIApp(App):
         }
     
     def _get_tool_schemas(self):
-        """Get tool schemas for the model."""
-        return [tool.get_schema() for tool in self.tools.values()]
+        """Get tool schemas for the model in OpenAI format."""
+        tools = []
+        for tool in self.tools.values():
+            schema = tool.get_schema()
+            # Convert to OpenAI format required by Ollama Cloud API
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": schema["name"],
+                    "description": schema["description"],
+                    "parameters": schema["parameters"],
+                }
+            })
+        return tools
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
