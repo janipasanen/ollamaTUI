@@ -136,8 +136,18 @@ def run_tui(config: Config) -> int:
     except KeyboardInterrupt:
         return 0
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"\nError: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         return 1
+    finally:
+        # Ensure terminal is restored
+        try:
+            import os
+            # Reset terminal modes
+            os.system('stty sane 2</dev/null >/dev/null')
+        except:
+            pass
 
 
 def run_exec(config: Config, prompt_parts: list) -> int:

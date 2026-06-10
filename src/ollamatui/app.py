@@ -204,9 +204,13 @@ class OllamaTUIApp(App):
                 for m in self.chat_widget.messages
             ]
             
+            # Get model name - strip -cloud suffix for cloud provider if needed
+            model_name = self.current_model.name
+            
             # Stream response
+            response_text = ""
             async for chunk in self.provider.chat(
-                self.current_model.name,
+                model_name,
                 messages,
                 stream=True,
                 options={
@@ -214,25 +218,36 @@ class OllamaTUIApp(App):
                     "top_p": self.config.top_p,
                 },
             ):
-                if chunk.thinking:
-                    # Show thinking indicator
-                    self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking: {chunk.thinking}*", "assistant")
-                
-                if chunk.message and chunk.message.content:
-                    self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
-                
-                if chunk.done:
-                    break
+                try:
+                    if chunk.thinking:
+                        # Show thinking indicator
+                        self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking: {chunk.thinking}*", "assistant")
+                    
+                    if chunk.message and chunk.message.content:
+                        response_text += chunk.message.content
+                        self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
+                    
+                    if chunk.done:
+                        break
+                except Exception as e:
+                    # Log but continue processing
+                    print(f"Error processing chunk: {e}")
+                    continue
         
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()
             print(f"Chat error: {error_detail}")  # Debug output
-            self.notify(f"Error: {e}", severity="error")
-            self.chat_widget.append_to_last_message(f"\n\n❌ Error: {e}", "assistant")
+            self.notify(f"Error: {e}", severity="error", timeout=10)
+            # Only add error message to chat if we haven't started receiving response
+            if not response_text:
+                self.chat_widget.append_to_last_message(f"\n\n❌ Error: {e}", "assistant")
         
         finally:
+            # Always reset streaming state
             self.chat_widget.set_streaming(False)
+            # Refresh the UI
+            self.chat_widget.refresh()
     
     async def on_chat_widget_stop_requested(self, event: ChatWidget.StopRequested) -> None:
         """Handle stop request."""

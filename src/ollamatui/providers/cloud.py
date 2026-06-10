@@ -77,12 +77,17 @@ class CloudOllamaProvider(BaseOllamaProvider):
         if think:
             payload["think"] = True
         
+        response_obj = None
         try:
-            async with client.stream("POST", "/api/chat", json=payload) as response:
+            response_obj = client.stream("POST", "/api/chat", json=payload)
+            async with response_obj as response:
                 if response.status_code >= 400:
-                    error_body = await response.aread()
-                    error_msg = error_body.decode('utf-8', errors='replace')
-                    raise Exception(f"API error {response.status_code}: {error_msg}")
+                    try:
+                        error_body = await response.aread()
+                        error_msg = error_body.decode('utf-8', errors='replace')
+                    except:
+                        error_msg = f"HTTP {response.status_code}"
+                    raise Exception(f"API error: {error_msg}")
                 
                 response.raise_for_status()
                 
@@ -93,13 +98,22 @@ class CloudOllamaProvider(BaseOllamaProvider):
                                 data = json.loads(line)
                                 yield self._parse_response(data)
                             except json.JSONDecodeError as e:
-                                # Skip invalid JSON lines
+                                # Log but skip invalid JSON
+                                print(f"JSON decode error: {e}")
+                                continue
+                            except Exception as e:
+                                print(f"Error parsing response: {e}")
                                 continue
                 else:
                     data = response.json()
                     yield self._parse_response(data)
         except Exception as e:
-            # Re-raise with more context
+            # Make sure to close the response if there's an error
+            if response_obj:
+                try:
+                    await response_obj.aclose()
+                except:
+                    pass
             raise Exception(f"Chat request failed: {e}")
     
     def _parse_response(self, data: Dict[str, Any]) -> ChatResponse:
