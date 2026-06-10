@@ -77,30 +77,46 @@ class CloudOllamaProvider(BaseOllamaProvider):
         if think:
             payload["think"] = True
         
-        async with client.stream("POST", "/api/chat", json=payload) as response:
-            response.raise_for_status()
-            
-            if stream:
-                async for line in response.aiter_lines():
-                    if line:
-                        data = json.loads(line)
-                        yield self._parse_response(data)
-            else:
-                data = response.json()
-                yield self._parse_response(data)
+        try:
+            async with client.stream("POST", "/api/chat", json=payload) as response:
+                if response.status_code >= 400:
+                    error_body = await response.aread()
+                    error_msg = error_body.decode('utf-8', errors='replace')
+                    raise Exception(f"API error {response.status_code}: {error_msg}")
+                
+                response.raise_for_status()
+                
+                if stream:
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                yield self._parse_response(data)
+                            except json.JSONDecodeError as e:
+                                # Skip invalid JSON lines
+                                continue
+                else:
+                    data = response.json()
+                    yield self._parse_response(data)
+        except Exception as e:
+            # Re-raise with more context
+            raise Exception(f"Chat request failed: {e}")
     
     def _parse_response(self, data: Dict[str, Any]) -> ChatResponse:
         """Parse Ollama Cloud API response."""
-        msg_data = data.get("message", {})
+        msg_data = data.get("message", {}) or {}
         
         # Handle thinking field if present
         thinking = data.get("thinking") or msg_data.get("thinking")
+        
+        # Handle content safely - might be None
+        content = msg_data.get("content", "") or ""
         
         return ChatResponse(
             model=data.get("model", ""),
             message=ChatMessage(
                 role=msg_data.get("role", "assistant"),
-                content=msg_data.get("content", ""),
+                content=content,
             ),
             done=data.get("done", False),
             done_reason=data.get("done_reason"),

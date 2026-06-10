@@ -156,6 +156,15 @@ class OllamaTUIApp(App):
         try:
             models = await self.provider.list_models()
             self.model_selector.set_models(models, self.config.provider)
+            
+            # Auto-select model from config if specified
+            if self.config.model and not self.current_model:
+                # Find matching model
+                for model in models:
+                    if model.name == self.config.model:
+                        self.current_model = model
+                        self.notify(f"Using model: {model.name}")
+                        break
         except Exception as e:
             self.notify(f"Failed to load models: {e}", severity="error")
     
@@ -204,13 +213,16 @@ class OllamaTUIApp(App):
                     # Show thinking indicator
                     self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking: {chunk.thinking}*", "assistant")
                 
-                if chunk.message.content:
+                if chunk.message and chunk.message.content:
                     self.chat_widget.append_to_last_message(chunk.message.content, "assistant")
                 
                 if chunk.done:
                     break
         
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"Chat error: {error_detail}")  # Debug output
             self.notify(f"Error: {e}", severity="error")
             self.chat_widget.append_to_last_message(f"\n\n❌ Error: {e}", "assistant")
         
