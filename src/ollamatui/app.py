@@ -1,5 +1,6 @@
 """Main Textual application for OllamaTUI."""
 
+import asyncio
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, Label
@@ -13,6 +14,7 @@ from ollamatui.providers.base import ModelInfo, ChatMessage
 from ollamatui.widgets.chat import ChatWidget
 from ollamatui.widgets.model_selector import ModelSelector
 from ollamatui.widgets.file_tree import FileTreeWidget
+from ollamatui.tools import FileTool, BashTool, GitTool, WebSearchTool
 
 
 class OllamaTUIApp(App):
@@ -116,6 +118,25 @@ class OllamaTUIApp(App):
         self.model_selector: ModelSelector = None
         self.file_tree: FileTreeWidget = None
         self._sidebar_visible = True
+        
+        # Initialize tools
+        self._init_tools()
+    
+    def _init_tools(self):
+        """Initialize available tools."""
+        working_dir = self.config.working_dir
+        allowed_dirs = self.config.add_dirs
+        
+        self.tools = {
+            "bash": BashTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
+            "file": FileTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
+            "git": GitTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
+            "web_search": WebSearchTool(),
+        }
+    
+    def _get_tool_schemas(self):
+        """Get tool schemas for the model."""
+        return [tool.get_schema() for tool in self.tools.values()]
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -214,6 +235,9 @@ class OllamaTUIApp(App):
             # Get model name
             model_name = self.current_model.name
             
+            # Get tool schemas
+            tools = self._get_tool_schemas()
+            
             # Stream response
             async for chunk in self.provider.chat(
                 model_name,
@@ -223,12 +247,39 @@ class OllamaTUIApp(App):
                     "temperature": self.config.temperature,
                     "top_p": self.config.top_p,
                 },
+                tools=tools,
             ):
                 # Check if we should stop
                 if not self.chat_widget.is_streaming:
                     break
                 
                 try:
+                    # Handle tool calls
+                    if chunk.tool_calls:
+                        # Add assistant message with tool calls
+                        self.chat_widget.append_to_last_message("\n🔧 Using tools...", "assistant")
+                        
+                        # Process tool calls
+                        for tool_call in chunk.tool_calls:
+                            tool_name = tool_call.get("function", {}).get("name", "")
+                            tool_args = tool_call.get("function", {}).get("arguments", {})
+                            
+                            if tool_name in self.tools:
+                                # Show what we're doing
+                                self.chat_widget.append_to_last_message(f"\n⏳ {tool_name}(...)", "assistant")
+                                
+                                # Execute tool
+                                try:
+                                    result = await self.tools[tool_name].execute(**tool_args)
+                                    if result.success:
+                                        result_str = str(result.output)[:500]  # Limit output length
+                                        self.chat_widget.append_to_last_message(f"\n✅ {result_str}", "assistant")
+                                    else:
+                                        self.chat_widget.append_to_last_message(f"\n❌ Error: {result.error}", "assistant")
+                                except Exception as e:
+                                    self.chat_widget.append_to_last_message(f"\n❌ Tool error: {e}", "assistant")
+                        continue
+                    
                     if chunk.thinking:
                         self.chat_widget.append_to_last_message(f"\n\n💭 *Thinking...*", "assistant")
                     

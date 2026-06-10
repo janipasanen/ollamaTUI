@@ -39,6 +39,7 @@ class ChatResponse:
     eval_count: Optional[int] = None
     eval_duration: Optional[int] = None
     thinking: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class BaseOllamaProvider(ABC):

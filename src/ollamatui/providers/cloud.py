@@ -53,6 +53,7 @@ class CloudOllamaProvider(BaseOllamaProvider):
         stream: bool = True,
         options: Optional[Dict[str, Any]] = None,
         think: bool = False,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncIterator[ChatResponse]:
         """Chat with a cloud model."""
         client = await self._get_client()
@@ -76,6 +77,9 @@ class CloudOllamaProvider(BaseOllamaProvider):
         
         if think:
             payload["think"] = True
+        
+        if tools:
+            payload["tools"] = tools
         
         response_obj = None
         try:
@@ -126,6 +130,9 @@ class CloudOllamaProvider(BaseOllamaProvider):
         # Handle content safely - might be None
         content = msg_data.get("content", "") or ""
         
+        # Handle tool calls if present
+        tool_calls = msg_data.get("tool_calls") or data.get("tool_calls")
+        
         return ChatResponse(
             model=data.get("model", ""),
             message=ChatMessage(
@@ -141,4 +148,5 @@ class CloudOllamaProvider(BaseOllamaProvider):
             eval_count=data.get("eval_count"),
             eval_duration=data.get("eval_duration"),
             thinking=thinking,
+            tool_calls=tool_calls,
         )
