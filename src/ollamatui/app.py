@@ -159,9 +159,14 @@ class OllamaTUIApp(App):
             
             # Auto-select model from config if specified
             if self.config.model and not self.current_model:
+                # For cloud provider, strip -cloud suffix if present
+                model_name = self.config.model
+                if self.config.provider == "cloud" and model_name.endswith("-cloud"):
+                    model_name = model_name[:-6]  # Remove -cloud suffix
+                
                 # Find matching model
                 for model in models:
-                    if model.name == self.config.model:
+                    if model.name == model_name or model.name == self.config.model:
                         self.current_model = model
                         self.notify(f"Using model: {model.name}")
                         break
