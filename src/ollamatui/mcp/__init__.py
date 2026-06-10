@@ -1,9 +1,19 @@
-"""MCP (Model Context Protocol) support."""
+"""MCP (Model Context Protocol) server support for OllamaTUI."""
 
-from ollamatui.mcp.client import MCPClient, MCPTool, MCPServerConfig
+from ollamatui.mcp.server import MCPServer
+from ollamatui.mcp.types import (
+    MCPTool,
+    MCPToolResult,
+    MCPCapabilities,
+    MCPListToolsResult,
+    MPCallToolResult,
+)
 
 __all__ = [
-    "MCPClient",
+    "MCPServer",
     "MCPTool",
-    "MCPServerConfig",
+    "MCPToolResult",
+    "MCPCapabilities",
+    "MCPListToolsResult",
+    "MPCallToolResult",
 ]

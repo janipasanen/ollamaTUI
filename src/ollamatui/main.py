@@ -60,6 +60,11 @@ def create_parser() -> argparse.ArgumentParser:
         action="version",
         version="%(prog)s 0.1.0",
     )
+    parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Run as MCP server (stdio transport)",
+    )
     
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -112,7 +117,9 @@ def main() -> int:
     config = load_config(profile=args.profile, cli_overrides=cli_overrides)
     
     # Handle commands
-    if args.command == "exec":
+    if args.mcp:
+        return run_mcp_server(config)
+    elif args.command == "exec":
         return run_exec(config, args.prompt)
     elif args.command == "review":
         return run_review(config)
@@ -125,6 +132,29 @@ def main() -> int:
     else:
         # Run interactive TUI
         return run_tui(config)
+
+
+def run_mcp_server(config: Config) -> int:
+    """Run MCP server."""
+    import asyncio
+    from ollamatui.mcp.server import MCPServer
+    
+    async def run():
+        server = MCPServer(
+            working_dir=config.working_dir,
+            allowed_dirs=config.add_dirs,
+            approval_policy=config.approval,
+        )
+        await server.run_stdio()
+    
+    try:
+        asyncio.run(run())
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    except Exception as e:
+        print(f"MCP server error: {e}", file=sys.stderr)
+        return 1
 
 
 def run_tui(config: Config) -> int:
