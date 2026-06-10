@@ -87,7 +87,12 @@ class ModelSelector(Container):
             cloud_indicator = " ☁️" if model.is_cloud else ""
             display = f"{model.name}{size_str}{cloud_indicator}"
             
-            item = ListItem(Label(display), id=f"model-{model.name}")
+            # Sanitize ID: replace invalid chars with underscores
+            # DOM IDs can only contain letters, numbers, underscores, and hyphens
+            safe_id = model.name.replace(":", "_").replace(".", "_").replace("/", "_")
+            item = ListItem(Label(display), id=f"model-{safe_id}")
+            # Store the actual model name as a data attribute
+            item.data_model_name = model.name
             self._model_list.append(item)
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -103,7 +108,13 @@ class ModelSelector(Container):
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle model selection."""
         if event.item.id and event.item.id.startswith("model-"):
-            model_name = event.item.id[6:]  # Remove "model-" prefix
-            model = next((m for m in self.models if m.name == model_name), None)
+            # Try to get the model name from the data attribute first
+            model_name = getattr(event.item, 'data_model_name', None)
+            if model_name:
+                model = next((m for m in self.models if m.name == model_name), None)
+            else:
+                # Fallback: extract from ID (for backward compatibility)
+                model_name = event.item.id[6:]  # Remove "model-" prefix
+                model = next((m for m in self.models if m.name == model_name), None)
             if model:
                 self.post_message(self.ModelSelected(model))
