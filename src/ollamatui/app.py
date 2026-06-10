@@ -127,10 +127,22 @@ class OllamaTUIApp(App):
         working_dir = self.config.working_dir
         allowed_dirs = self.config.add_dirs
         
+        # Use approval_policy="never" for now (auto-approve all commands)
+        # In future, this could be configurable and show approval prompts
         self.tools = {
-            "bash": BashTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
-            "file": FileTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
-            "git": GitTool(working_dir=working_dir, allowed_dirs=allowed_dirs),
+            "bash": BashTool(
+                working_dir=working_dir,
+                allowed_dirs=allowed_dirs,
+                approval_policy="never",  # Auto-approve for now
+            ),
+            "file": FileTool(
+                working_dir=working_dir,
+                allowed_dirs=allowed_dirs,
+            ),
+            "git": GitTool(
+                working_dir=working_dir,
+                allowed_dirs=allowed_dirs,
+            ),
             "web_search": WebSearchTool(),
         }
     
@@ -264,20 +276,33 @@ class OllamaTUIApp(App):
                             tool_name = tool_call.get("function", {}).get("name", "")
                             tool_args = tool_call.get("function", {}).get("arguments", {})
                             
+                            if isinstance(tool_args, str):
+                                import json
+                                try:
+                                    tool_args = json.loads(tool_args)
+                                except:
+                                    tool_args = {}
+                            
                             if tool_name in self.tools:
                                 # Show what we're doing
-                                self.chat_widget.append_to_last_message(f"\n⏳ {tool_name}(...)", "assistant")
+                                args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:3])
+                                self.chat_widget.append_to_last_message(f"\n⏳ {tool_name}({args_str})", "assistant")
                                 
                                 # Execute tool
                                 try:
                                     result = await self.tools[tool_name].execute(**tool_args)
                                     if result.success:
-                                        result_str = str(result.output)[:500]  # Limit output length
-                                        self.chat_widget.append_to_last_message(f"\n✅ {result_str}", "assistant")
+                                        # Truncate long outputs
+                                        output_str = str(result.output)
+                                        if len(output_str) > 1000:
+                                            output_str = output_str[:1000] + "..."
+                                        self.chat_widget.append_to_last_message(f"\n✅ {output_str}", "assistant")
                                     else:
                                         self.chat_widget.append_to_last_message(f"\n❌ Error: {result.error}", "assistant")
                                 except Exception as e:
                                     self.chat_widget.append_to_last_message(f"\n❌ Tool error: {e}", "assistant")
+                            else:
+                                self.chat_widget.append_to_last_message(f"\n⚠️ Unknown tool: {tool_name}", "assistant")
                         continue
                     
                     if chunk.thinking:
