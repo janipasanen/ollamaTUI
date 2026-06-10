@@ -30,6 +30,7 @@ src/ollamatui/widgets/chat.py
 src/ollamatui/widgets/file_tree.py
 src/ollamatui/widgets/model_selector.py
 tests/test_config.py
+tests/test_integration.py
 tests/test_providers.py
 tests/test_sessions.py
 tests/test_tools.py
